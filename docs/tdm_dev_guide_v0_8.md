@@ -1,6 +1,6 @@
 # **Core Architectures of Text Diffusion Models: A Developer's Guide**
 
-An analysis of recent research reveals two dominant architectural paradigms for text generation diffusion models: **Discrete Diffusion** and **Continuous Diffusion**. While both are built on the foundational principle of reversing a corruption process, their internal mechanics differ significantly. This guide outlines a core five-component architecture, providing a clear and consistent understanding of both approaches for developers. It synthesizes the foundational principles of text diffusion, as reviewed in seminal surveys like Li et al. (2023) and Yi et al. (2024), with more recent, state-of-the-art findings from the works cited throughout this document.
+An analysis of recent research reveals two dominant architectural paradigms for text generation diffusion models: **Discrete Diffusion** and **Continuous Diffusion**. While both are built on the foundational principle of reversing a corruption process, their internal mechanics differ significantly. This guide outlines a core two-component architecture with five essential subcomponents, providing a clear and consistent understanding of both approaches for developers. It synthesizes the foundational principles of text diffusion, as reviewed in seminal surveys like Li et al. (2023) and Yi et al. (2024), with more recent, state-of-the-art findings from the works cited throughout this document.
 
 The central idea is a two-stage process:
 
@@ -47,17 +47,31 @@ Diffusion models are "super data learners" that trade higher computational costs
 
 As high-quality training data becomes a more significant bottleneck than compute, the data efficiency of diffusion models makes them an increasingly compelling architectural choice.
 
-## **The Five Core Components**
+## **The Two Core Components**
 
-### **1. Input Representation**
+Text diffusion models fundamentally consist of two complementary processes that work together to enable generation:
 
-This component determines how raw text is converted into a format suitable for the diffusion process.
+### **Core Component 1: The Forward Process (Data → Noise)**
+The forward process systematically corrupts clean text into a simple, tractable distribution. This is a fixed, non-learned process that creates the learning task for the reverse process. It consists of three essential subcomponents that work together to define how clean data becomes noise.
+
+### **Core Component 2: The Reverse Process (Noise → Data)**  
+The reverse process learns to invert the forward corruption, step-by-step, to generate new data. This is the learned, generative core of the model. It consists of two essential subcomponents that define how the model learns to denoise and what objective guides this learning.
+
+---
+
+## **Core Component 1: The Forward Process (Data → Noise)**
+
+The forward process defines how clean text is systematically corrupted into noise, creating the fundamental learning task for diffusion models. This process is fixed and non-learned, but its design critically impacts model performance.
+
+### **Subcomponent 1A: Input Representation**
+
+This subcomponent determines how raw text is converted into a format suitable for the diffusion process.
 
 **Discrete Diffusion** operates directly on tokenized text, using token IDs from a standard vocabulary (e.g., BPE, WordPiece). **Continuous Diffusion** converts discrete tokens into continuous vector representations, typically through embeddings or contextualized encodings from pre-trained models.
 
-### **2. The Forward Process (Corruption)**
+### **Subcomponent 1B: The Corruption Process**
 
-This defines how clean data is systematically corrupted into noise, creating the learning task for the reverse process.
+This subcomponent defines the specific mechanism by which clean data is systematically degraded into noise.
 
 #### **Discrete Diffusion**
 
@@ -89,51 +103,9 @@ LLaDA (Nie et al., 2025) demonstrates that **variable masking ratios per sequenc
 * **Mechanism:** This approach first maps tokens into a continuous vector space. While early models used simple token embeddings, a more advanced strategy is to use the final layer outputs of a pre-trained language model (e.g., BERT), referred to as encodings. These encodings contain rich contextual information. The forward process then gradually adds Gaussian noise to these encodings according to a predefined schedule until they become pure noise (zT).  
 * **Recent Research:** Some studies argue that using contextual encodings is superior to using context-free embeddings. For instance, **Shabalin et al. (2025)** demonstrate that this provides the diffusion model with a more suitable latent space for training, simplifying the denoising task and improving performance. As an alternative to standard Gaussian noise, Chen et al. (2023) propose a "soft-masked noise" strategy, where noise is added to token encodings in a structured way based on linguistic features (e.g., word importance), creating a more tailored corruption process for text. Further blurring the lines, **Gong et al. (2023)** developed a hybrid forward process that combines standard Gaussian noise with a discrete **"soft absorbing state"**—a learnable vector that randomly replaces some token encodings. This method aims to bridge the gap between continuous and discrete spaces, helping the model better reconstruct discrete information while still operating in a continuous domain.
 
-### **3. The Reverse Process (Denoising)**
+### **Subcomponent 1C: The Corruption Schedule**
 
-This is the generative core of the model. It learns to reverse the corruption defined by the forward process, step-by-step, to generate new data.
-
-#### **Discrete Diffusion**
-
-* **Purpose:** To learn the reverse transition probabilities that undo the forward masking process.  
-* **Mechanism:** A neural network (typically a Transformer) learns to predict the original tokens at masked positions. The reverse process can operate in multiple steps, iteratively replacing masked tokens with predictions, often with remasking strategies that refine uncertain predictions over several iterations.  
-* **Recent Research:** Early discrete diffusion models used simple greedy unmasking. However, **Sahoo et al. (2024)** introduced confidence-based remasking, where the model iteratively unmasks the most confident predictions while remasking uncertain ones. This approach significantly improves generation quality. Additionally, **Gong et al. (2023)** explored hybrid approaches that combine the parallel advantages of NAR generation with the iterative refinement benefits of diffusion.
-
-#### **Continuous Diffusion**
-
-* **Purpose:** To learn a denoising function that can remove Gaussian noise and recover the original latent representations.  
-* **Mechanism:** A neural network learns to denoise the corrupted latent vectors. This typically involves predicting either the noise to be removed or the clean latent vectors directly. The reverse process iteratively applies the denoising function, gradually reducing noise levels according to a reverse schedule.  
-* **Recent Research:** **Shabalin et al. (2025)** demonstrate that using a more sophisticated encoder-denoiser-decoder architecture significantly improves performance. They show that a three-part system with a BERT-like encoder, a trainable denoising Transformer, and a specialized decoder offers better control over the generation process and reduces computational overhead compared to end-to-end approaches.
-
-### **4. The Objective Function**
-
-This is the mathematical formulation of the training goal, defining the loss that the denoising network minimizes.
-
-#### **Discrete Diffusion**
-
-* **Purpose:** To train the denoising network to accurately predict the masked tokens. The theoretical goal is to maximize the log-likelihood of the data, which is intractable.  
-* **Mechanism:** The model is trained by minimizing a tractable surrogate for the negative log-likelihood, known as the Evidence Lower Bound (ELBO). Foundational work by Austin et al. (2021) and a simplified, continuous-time formulation by Shi et al. (2025) provide a now widely accepted expression for this objective. They show that for an absorbing-state masked diffusion model, the continuous-time ELBO simplifies to a weighted integral of cross-entropy losses over time.
-
-The correct, theoretically grounded loss function for a sequence of *N* tokens is:
-
-L∞(N)​≜∫01​1−αt​αt′​​Eq(xt​∣x0​)​​n:xt(n)​=m∑​(x0(n)​)⊤logμθ(n)​(xt​,t)​dt  
-**Key Components for Developers:**
-
-* μθ(n)​(xt​,t): This is your neural network (e.g., a Transformer), which takes the corrupted sequence xt​ at time t as input and predicts the probability distribution of the original *n*-th token.  
-* αt​: This is the **masking schedule**, which determines the probability that a token remains unmasked at time t. For example, a simple linear schedule is αt​=1−t.  
-* 1−αt​αt′​​: This is the crucial **time-dependent reweighting factor**. For a linear schedule, this term is −t1​. Omitting this weight leads to an incorrect loss formulation that does not faithfully optimize the data's log-likelihood.
-
-**CRITICAL IMPLEMENTATION NOTE:** The importance of the time-dependent reweighting factor is not merely theoretical. Critical analyses of the field ("Diffusion Language Models are Super Data Learners," 2025) have shown that prominent research has used the incorrect, unweighted loss. This error makes comparisons between AR models (which compute an exact negative log-likelihood) and diffusion models (which compute an upper bound) fundamentally unfair and can lead to flawed conclusions about model performance. Implementing the correct, weighted loss is essential for both theoretical validity and fair evaluation.
-
-#### **Continuous Diffusion**
-
-* **Purpose:** To train the denoising network to accurately predict the original, noise-free latent vectors.  
-* **Mechanism:** As the model operates in a continuous space, the objective is typically a regression-style loss. The denoising network is trained by minimizing the mean-squared error (MSE) between the network's prediction of the clean latent vectors (ẑ₀) and the true clean latent vectors (z₀), measuring the direct distance in the latent space.  
-* **Recent Research:** While the standard MSE loss is common (**Shabalin et al., 2025**), some work modifies this objective. For example, **Tang et al. (2023)** introduce a **"Distance Penalty"** during a post-training phase that penalizes inconsistencies between the model's predictions at different timesteps. In another approach, Chen et al. (2023) bridge the continuous and discrete paradigms by using a cross-entropy loss to directly predict the final discrete tokens from the denoised latent vectors, offering an alternative to the typical regression objective.
-
-### **5. The Corruption Schedule**
-
-This component controls the rate or level of corruption applied during the forward process.
+This subcomponent controls the rate or level of corruption applied during the forward process over time.
 
 #### **Discrete Diffusion**
 
@@ -170,6 +142,54 @@ Further solidifying this choice, **Zhang (2025)** uses information geometry to p
 * **Purpose:** To define how much Gaussian noise is added at each step t of the forward process. A well-designed schedule ensures the denoising task is manageable at every stage.  
 * **Mechanism:** The schedule is a function, often denoted αt, that maps a time step t to a specific noise variance. Standard schedules from image diffusion (e.g., cosine) have been found to be suboptimal for text, as they may not add enough noise to make the task sufficiently difficult, especially when using rich contextual encodings.  
 * **Recent Research:** Some work has identified this issue and proposed novel noise schedulers designed for text. For instance, **Shabalin et al. (2025)** propose a **tan-d noise scheduler** designed to introduce a significantly higher and more consistent level of noise across all timesteps, leading to a more effective training signal.
+
+---
+
+## **Core Component 2: The Reverse Process (Noise → Data)**
+
+The reverse process is the learned, generative core of diffusion models. It learns to systematically reverse the forward corruption to generate coherent text from noise.
+
+### **Subcomponent 2A: The Denoising Network**
+
+This subcomponent is the neural network that learns to reverse the corruption defined by the forward process, step-by-step, to generate new data.
+
+#### **Discrete Diffusion**
+
+* **Purpose:** To learn the reverse transition probabilities that undo the forward masking process.  
+* **Mechanism:** A neural network (typically a Transformer) learns to predict the original tokens at masked positions. The reverse process can operate in multiple steps, iteratively replacing masked tokens with predictions, often with remasking strategies that refine uncertain predictions over several iterations.  
+* **Recent Research:** Early discrete diffusion models used simple greedy unmasking. However, **Sahoo et al. (2024)** introduced confidence-based remasking, where the model iteratively unmasks the most confident predictions while remasking uncertain ones. This approach significantly improves generation quality. Additionally, **Gong et al. (2023)** explored hybrid approaches that combine the parallel advantages of NAR generation with the iterative refinement benefits of diffusion.
+
+#### **Continuous Diffusion**
+
+* **Purpose:** To learn a denoising function that can remove Gaussian noise and recover the original latent representations.  
+* **Mechanism:** A neural network learns to denoise the corrupted latent vectors. This typically involves predicting either the noise to be removed or the clean latent vectors directly. The reverse process iteratively applies the denoising function, gradually reducing noise levels according to a reverse schedule.  
+* **Recent Research:** **Shabalin et al. (2025)** demonstrate that using a more sophisticated encoder-denoiser-decoder architecture significantly improves performance. They show that a three-part system with a BERT-like encoder, a trainable denoising Transformer, and a specialized decoder offers better control over the generation process and reduces computational overhead compared to end-to-end approaches.
+
+### **Subcomponent 2B: The Objective Function**
+
+This subcomponent is the mathematical formulation of the training goal, defining the loss that the denoising network minimizes.
+
+#### **Discrete Diffusion**
+
+* **Purpose:** To train the denoising network to accurately predict the masked tokens. The theoretical goal is to maximize the log-likelihood of the data, which is intractable.  
+* **Mechanism:** The model is trained by minimizing a tractable surrogate for the negative log-likelihood, known as the Evidence Lower Bound (ELBO). Foundational work by Austin et al. (2021) and a simplified, continuous-time formulation by Shi et al. (2025) provide a now widely accepted expression for this objective. They show that for an absorbing-state masked diffusion model, the continuous-time ELBO simplifies to a weighted integral of cross-entropy losses over time.
+
+The correct, theoretically grounded loss function for a sequence of *N* tokens is:
+
+L∞(N)​≜∫01​1−αt​αt′​​Eq(xt​∣x0​)​​n:xt(n)​=m∑​(x0(n)​)⊤logμθ(n)​(xt​,t)​dt  
+**Key Components for Developers:**
+
+* μθ(n)​(xt​,t): This is your neural network (e.g., a Transformer), which takes the corrupted sequence xt​ at time t as input and predicts the probability distribution of the original *n*-th token.  
+* αt​: This is the **masking schedule**, which determines the probability that a token remains unmasked at time t. For example, a simple linear schedule is αt​=1−t.  
+* 1−αt​αt′​​: This is the crucial **time-dependent reweighting factor**. For a linear schedule, this term is −t1​. Omitting this weight leads to an incorrect loss formulation that does not faithfully optimize the data's log-likelihood.
+
+**CRITICAL IMPLEMENTATION NOTE:** The importance of the time-dependent reweighting factor is not merely theoretical. Critical analyses of the field ("Diffusion Language Models are Super Data Learners," 2025) have shown that prominent research has used the incorrect, unweighted loss. This error makes comparisons between AR models (which compute an exact negative log-likelihood) and diffusion models (which compute an upper bound) fundamentally unfair and can lead to flawed conclusions about model performance. Implementing the correct, weighted loss is essential for both theoretical validity and fair evaluation.
+
+#### **Continuous Diffusion**
+
+* **Purpose:** To train the denoising network to accurately predict the original, noise-free latent vectors.  
+* **Mechanism:** As the model operates in a continuous space, the objective is typically a regression-style loss. The denoising network is trained by minimizing the mean-squared error (MSE) between the network's prediction of the clean latent vectors (ẑ₀) and the true clean latent vectors (z₀), measuring the direct distance in the latent space.  
+* **Recent Research:** While the standard MSE loss is common (**Shabalin et al., 2025**), some work modifies this objective. For example, **Tang et al. (2023)** introduce a **"Distance Penalty"** during a post-training phase that penalizes inconsistencies between the model's predictions at different timesteps. In another approach, Chen et al. (2023) bridge the continuous and discrete paradigms by using a cross-entropy loss to directly predict the final discrete tokens from the denoised latent vectors, offering an alternative to the typical regression objective.
 
 ## **Advanced Sampling: Multiple Remasking Strategies**
 
@@ -209,11 +229,18 @@ LLaDA introduces multiple remasking strategies for different use cases, moving b
 
 ### **Key Design Decisions**
 
-1. **Masking Strategy**: Choose variable masking ratios (LLaDA approach) for competitive performance.  
-2. **Schedule Separation**: Use uniform sampling for training, cosine schedule for inference.
-3. **Remasking Approach**: Select strategy based on use case (random, confidence-based, or semi-autoregressive).  
-4. **Model Architecture**: Balance between model capacity and computational efficiency, considering whether to use shared or separate encoders/decoders.  
-5. **Loss Function**: **Critically important—ensure proper time-dependent reweighting implementation** to avoid the pitfalls identified in recent critiques of diffusion research.
+1. **Forward Process Design**:
+   - **Input Representation**: Choose between discrete tokens or continuous embeddings
+   - **Corruption Process**: Select masking strategy (variable ratios for competitive performance)
+   - **Corruption Schedule**: Use uniform sampling for training, cosine schedule for inference
+
+2. **Reverse Process Design**:
+   - **Denoising Network**: Balance between model capacity and computational efficiency
+   - **Objective Function**: **Critically important—ensure proper time-dependent reweighting implementation**
+
+3. **Advanced Configurations**:
+   - **Remasking Approach**: Select strategy based on use case (random, confidence-based, or semi-autoregressive)
+   - **Schedule Separation**: Never use the same schedule for training and inference
 
 ### **Scaling Lessons from LLaDA**
 
