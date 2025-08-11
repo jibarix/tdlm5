@@ -1,0 +1,10 @@
+CLAUDE.md
+__pycache__/
+documentation/
+enhanced_pipeline_test/
+experiments/
+wandb/
+gpu_test/
+old_versions_backup/
+test_exp/
+test_pipeline/

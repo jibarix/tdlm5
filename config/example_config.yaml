@@ -1,0 +1,126 @@
+# ================================================================================
+# TDLM Example Configuration - LLaDA Validated
+# Optimized for 8GB VRAM (RTX 3070 Ti class) with research-backed defaults
+# ================================================================================
+
+# Model Architecture
+model:
+  max_seq_length: 256           # Sequence length for training/inference
+  hidden_size: 128              # Primary capacity parameter (scale: 128/256/512)
+  num_layers: 3                 # Depth (3-6 layers typical for small diffusion models)
+  num_heads: 4                  # Attention heads (keep hidden_size divisible)
+  dropout: 0.1                  # Regularization (diffusion needs less than AR)
+  training_mode: "diffusion"    # "diffusion" or "autoregressive"
+  
+  # ADDED: Missing required parameters
+  vocab_size: 50257             # GPT-2 vocabulary size
+  mask_token_id: 50256          # Token ID for [MASK] (using last token as mask)
+
+# Advanced model settings (with defaults)
+advanced:
+  attention_dropout: 0.1
+  layer_norm_eps: 1e-5
+  ignore_index: -100
+
+# Discrete Diffusion Process
+diffusion:
+  # CRITICAL: Variable masking ratios per sequence (LLaDA finding)
+  single_ratio_per_sequence: false    # NEVER set to true - fundamental error
+  
+  # Corruption ratio bounds for uniform sampling during training
+  min_mask_ratio: 0.0                 # Allow 0% masking (clean examples)
+  max_mask_ratio: 1.0                 # Allow 100% masking (fully corrupted)
+  
+  # Training uses uniform t~U[0,1] sampling (hardcoded in diffusion.py)
+  # Inference uses cosine schedule (configured in sampling section)
+  
+  confidence_threshold: 0.8           # Remasking threshold during generation
+  max_loss_weight: 5.0               # Clip extreme time-dependent weights
+
+# Training Configuration
+training:
+  batch_size: 16                     # Small models: 8-32 | LLaDA used: 1280
+  gradient_accumulation_steps: 8      # Effective batch = 16*8 = 128
+  learning_rate: 2e-4                # Small models: 1e-4 to 5e-4 | LLaDA: 4e-4
+  min_learning_rate: 2e-5            # 10% of peak LR for cosine schedule
+  weight_decay: 0.1                  # L2 regularization (matches LLaDA exactly)
+  num_epochs: 100                    # Diffusion benefits from extended training
+  gradient_clip: 1.0                 # Prevent exploding gradients
+
+  # Based on discrete diffusion research requirements
+  eval_every_n_steps: 1000
+  save_every_n_steps: 1000
+  logging_steps: 100                    # Basic metrics (loss, accuracy)
+  detailed_metrics_steps: 500           # Tier 2 metrics (attention, token patterns)
+  generation_eval_steps: 2000           # Generation quality during training
+  
+  # Optimizer configuration (research-validated)
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1e-8
+  warmup_ratio: 0.01
+
+# Data configuration
+data:
+  num_workers: 4
+
+# Sampling/Generation  
+sampling:
+  num_steps: 20                      # Denoising steps (20-30 sweet spot)
+  temperature: 1.0                   # Sampling randomness (1.0 = raw probs)
+  top_k: 50                          # Top-k filtering for diversity
+  top_p: 0.9                         # Nucleus sampling threshold
+  confidence_threshold: 0.8          # For confidence-based remasking
+  max_length: null                   # Use model.max_seq_length if null
+  seed: null                         # Random if null, deterministic if set
+  
+  # INFERENCE ONLY: Cosine schedule proven optimal (Zhang 2025)
+  schedule_type: "cosine"            # "cosine" (optimal) or "linear"
+
+monitoring:
+  wandb:
+    enabled: true
+    project: "tdlm-enhanced-metrics"
+    entity: null
+    tags: ["discrete-diffusion", "enhanced-metrics", "research-validated"]
+    
+    # ADDED: Custom metric groups for organized tracking
+    metric_groups:
+      # Tier 1 (Essential) - Tracked every logging_steps
+      tier1_essential:
+        - "mask_prediction_accuracy"      # MOST FUNDAMENTAL METRIC
+        - "corruption_low_accuracy"       # 0-30% masking performance
+        - "corruption_medium_accuracy"    # 30-70% masking performance  
+        - "corruption_high_accuracy"      # 70-100% masking performance
+        - "loss_weight_effectiveness"     # Austin et al. (2021) validation
+      
+      # Tier 2 (Important) - Tracked every detailed_metrics_steps
+      tier2_important:
+        - "attention_entropy"             # Bidirectional attention health
+        - "self_attention_ratio"          # Position bias detection
+        - "avg_prediction_confidence"     # Model confidence calibration
+        - "prediction_entropy"            # Uncertainty quantification
+      
+      # Tier 3 (Advanced) - Tracked less frequently
+      tier3_advanced:
+        - "schedule_optimality_validation" # Zhang (2025) empirical verification
+        - "token_frequency_bias"           # Vocabulary coverage analysis
+        - "denoising_convergence_rate"     # Generation efficiency
+
+# Reproducibility
+reproducibility:
+  seed: 42                           # Fixed seed for reproducible research
+
+# ================================================================================
+# RESEARCH VALIDATED SETTINGS:
+# - single_ratio_per_sequence: false (LLaDA critical finding)
+# - weight_decay: 0.1 (matches LLaDA exactly)  
+# - Training: uniform t sampling | Inference: cosine schedule (separate!)
+# - Extended epochs beneficial for data-constrained settings
+# ================================================================================
+
+# SCALE CONTEXT (LLaDA 8B vs This Config):
+# - Batch size: 1280 vs 16 (80x larger for web-scale)
+# - Learning rate: 4e-4 vs 2e-4 (higher for larger batches)
+# - Single pass on 2.3T tokens vs multi-epoch on smaller data
+# ================================================================================

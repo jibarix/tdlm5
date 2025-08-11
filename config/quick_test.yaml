@@ -1,0 +1,64 @@
+# Quick test config for validating all Wandb graphs
+model:
+  max_seq_length: 128           # Reduced for faster training
+  hidden_size: 64               # Smaller model
+  num_layers: 2                 
+  num_heads: 4                  
+  dropout: 0.1                  
+  training_mode: "diffusion"    
+  vocab_size: 50257             
+  mask_token_id: 50256          
+
+# Advanced model settings (required by model.py)
+advanced:
+  attention_dropout: 0.1
+  layer_norm_eps: 1e-5
+  ignore_index: -100
+
+diffusion:
+  single_ratio_per_sequence: false    
+  min_mask_ratio: 0.0                 
+  max_mask_ratio: 1.0                 
+  confidence_threshold: 0.8           
+  max_loss_weight: 5.0               
+
+training:
+  batch_size: 8                      # Smaller batches for faster iteration
+  gradient_accumulation_steps: 4      
+  learning_rate: 2e-4                
+  min_learning_rate: 2e-5            
+  weight_decay: 0.1                  
+  num_epochs: 5                      # Just 5 epochs for testing
+  gradient_clip: 1.0                 
+
+  # CRITICAL: High frequency logging to populate all charts
+  eval_every_n_steps: 200            # More frequent validation
+  save_every_n_steps: 500            
+  logging_steps: 10                  # Log every 10 steps (was 100)
+  detailed_metrics_steps: 50         # Detailed metrics every 50 steps (was 500)
+  generation_eval_steps: 1000        
+  
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1e-8
+  warmup_ratio: 0.01
+
+data:
+  num_workers: 2
+
+sampling:
+  num_steps: 10                      # Faster sampling
+  temperature: 1.0                   
+  top_k: 50                          
+  top_p: 0.9                         
+  confidence_threshold: 0.8          
+  schedule_type: "cosine"            
+
+monitoring:
+  wandb:
+    enabled: true
+    project: "tdlm-quick-test"
+    tags: ["quick-test", "all-graphs-working"]
+
+reproducibility:
+  seed: 42
