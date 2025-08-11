@@ -46,6 +46,7 @@ training:
   warmup_start_factor: 0.001         # Start at 0.1% of target LR during warmup (instead of 0.0001%)  
   warmup_end_factor: 1.0             # Reach 100% of target LR after warmup period
   checkpoint_map_location: "cuda"    # Load checkpoints directly to GPU (avoids CPU→GPU transfer)
+  cleanup_checkpoints: true          # true = delete all checkpoints except best and latest
   perplexity_cap: 15.0               # Maximum loss value for perplexity calculation (prevents math.exp overflow)
 
 data:
