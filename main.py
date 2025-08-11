@@ -25,7 +25,8 @@ from src.data import create_dataloaders
 from src.model import TinyDiffusionTransformer
 from src.diffusion import DiscreteDiffusion
 from src.training import DiffusionTrainer
-from src.evaluation import compare_ar_vs_diffusion
+# FIXED Issue 8: Removed unused import
+# from src.evaluation import compare_ar_vs_diffusion
 
 
 def main():
@@ -70,6 +71,18 @@ def main():
     # Save config to experiment directory
     config.save(experiment_dir / 'configs' / 'config.yaml')
     
+    # FIXED Issues 3, 7: Enhanced evaluation configuration
+    enhanced_eval_config = getattr(config, 'enhanced_evaluation', None)
+    if enhanced_eval_config is None:
+        # Default enhanced evaluation settings
+        include_downstream = True
+        max_eval_batches = None
+        logger.info("Using default enhanced evaluation settings")
+    else:
+        include_downstream = getattr(enhanced_eval_config, 'include_downstream', True)
+        max_eval_batches = getattr(enhanced_eval_config, 'max_eval_batches', None)
+        logger.info(f"Enhanced evaluation config: include_downstream={include_downstream}, max_batches={max_eval_batches}")
+    
     # Create data loaders
     logger.info("Creating data loaders...")
     train_loader, val_loader, test_loader = create_dataloaders(config)
@@ -94,7 +107,7 @@ def main():
         model.load_state_dict(checkpoint['model_state_dict'])
         logger.info(f"Checkpoint loaded from epoch {checkpoint['epoch']}, step {checkpoint['global_step']}")
     
-    # Evaluation only mode
+    # FIXED Issue 6: Eval-only mode with configuration control
     if args.eval_only:
         if not args.resume:
             raise ValueError("--eval-only requires --resume checkpoint")
@@ -102,11 +115,14 @@ def main():
         logger.info("Running evaluation only...")
         from src.evaluation import evaluate_single_model
         
+        # FIXED Issues 2, 5: Pass enhanced evaluation parameters
         results = evaluate_single_model(
             model=model,
             diffusion=diffusion,
             test_dataloader=test_loader,
-            model_name=f"{config.model.training_mode.title()} Model"
+            model_name=f"{config.model.training_mode.title()} Model",
+            max_batches=max_eval_batches,
+            include_downstream=include_downstream
         )
         
         logger.info("=" * 60)
@@ -117,6 +133,21 @@ def main():
         logger.info(f"Perplexity: {results.perplexity:.2f}")
         logger.info(f"Tokens evaluated: {results.num_tokens:,}")
         logger.info(f"Evaluation time: {results.evaluation_time:.2f}s")
+        
+        # FIXED Issue 4: Log enhanced results
+        if results.downstream_accuracy:
+            logger.info("Downstream Task Performance:")
+            for task, accuracy in results.downstream_accuracy.items():
+                logger.info(f"  {task}: {accuracy:.1%}")
+        
+        if results.relative_likelihood_gap:
+            logger.info(f"Relative Likelihood Gap: {results.relative_likelihood_gap:.3f}")
+        
+        if results.comparison_warnings:
+            logger.info("Comparison Warnings:")
+            for key, warning in results.comparison_warnings.items():
+                logger.info(f"  {key}: {warning}")
+        
         return
     
     # Create trainer
@@ -155,11 +186,14 @@ def main():
         logger.info("Running final evaluation...")
         from src.evaluation import evaluate_single_model
         
+        # FIXED Issues 2, 5, 10: Pass enhanced evaluation parameters with performance control
         final_results = evaluate_single_model(
             model=model,
             diffusion=diffusion,
             test_dataloader=test_loader,
-            model_name=f"Final {config.model.training_mode.title()} Model"
+            model_name=f"Final {config.model.training_mode.title()} Model",
+            max_batches=max_eval_batches,
+            include_downstream=include_downstream
         )
         
         logger.info("=" * 60)
@@ -169,18 +203,55 @@ def main():
         logger.info(f"Test Perplexity: {final_results.perplexity:.2f}")
         logger.info(f"Tokens evaluated: {final_results.num_tokens:,}")
         
-        # Save final results
+        # FIXED Issue 4: Log enhanced results
+        if final_results.downstream_accuracy:
+            logger.info("Downstream Task Performance:")
+            for task, accuracy in final_results.downstream_accuracy.items():
+                logger.info(f"  {task}: {accuracy:.1%}")
+        
+        if final_results.relative_likelihood_gap:
+            logger.info(f"Relative Likelihood Gap: {final_results.relative_likelihood_gap:.3f}")
+        
+        if final_results.comparison_warnings:
+            logger.info("Comparison Warnings:")
+            for key, warning in final_results.comparison_warnings.items():
+                logger.info(f"  {key}: {warning}")
+        
+        # FIXED Issues 1, 9: Save enhanced results with proper serialization
+        def convert_to_serializable(obj):
+            """Convert numpy/torch types to Python native types for JSON serialization."""
+            if obj is None:
+                return None
+            if isinstance(obj, dict):
+                return {key: convert_to_serializable(value) for key, value in obj.items()}
+            if hasattr(obj, 'item'):  # numpy/torch scalar
+                return obj.item()
+            if hasattr(obj, 'tolist'):  # numpy/torch array
+                return obj.tolist()
+            return obj
+        
         results_summary = {
             'experiment_id': experiment_id,
             'config': config.to_dict(),
             'training_results': training_results,
             'final_evaluation': {
+                # Traditional metrics
                 'loss': final_results.loss,
                 'perplexity': final_results.perplexity,
-                'num_tokens': final_results.num_tokens
+                'num_tokens': final_results.num_tokens,
+                'evaluation_time': final_results.evaluation_time,
+                # FIXED Issue 1: Enhanced metrics now included
+                'downstream_accuracy': convert_to_serializable(final_results.downstream_accuracy),
+                'relative_likelihood_gap': convert_to_serializable(final_results.relative_likelihood_gap),
+                'comparison_warnings': convert_to_serializable(final_results.comparison_warnings)
             },
             'training_time_hours': training_time / 3600,
-            'device': str(device)
+            'device': str(device),
+            # FIXED Issue 7: Save enhanced evaluation configuration
+            'enhanced_evaluation_config': {
+                'include_downstream': include_downstream,
+                'max_eval_batches': max_eval_batches
+            }
         }
         
         import json

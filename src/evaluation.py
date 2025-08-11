@@ -526,10 +526,22 @@ def evaluate_single_model(
     diffusion: Optional[DiscreteDiffusion],
     test_dataloader: torch.utils.data.DataLoader,
     model_name: str = "model",
-    max_batches: Optional[int] = None
+    max_batches: Optional[int] = None,
+    include_downstream: bool = True  # FIXED: Add missing parameter
 ) -> EvaluationResults:
     """
     UPDATED: Enhanced single model evaluation with fair metrics.
+    
+    Args:
+        model: Model to evaluate
+        diffusion: DiscreteDiffusion for diffusion models (None for AR)
+        test_dataloader: DataLoader with test data
+        model_name: Name for the model
+        max_batches: Maximum number of batches to evaluate (None for all)
+        include_downstream: Whether to run downstream task evaluation
+        
+    Returns:
+        EvaluationResults with traditional + fair comparison metrics
     """
     evaluator = PerplexityEvaluator()
     return evaluator.evaluate_model(
@@ -538,7 +550,7 @@ def evaluate_single_model(
         diffusion=diffusion,
         max_batches=max_batches,
         model_name=model_name,
-        include_downstream=True
+        include_downstream=include_downstream  # FIXED: Pass parameter properly
     )
 
 

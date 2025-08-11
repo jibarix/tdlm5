@@ -67,3 +67,7 @@ monitoring:
 
 reproducibility:
   seed: 42
+
+enhanced_evaluation:         # Whether to include downstream task evaluation (HellaSwag, MMLU samples)
+  include_downstream: true   # Set to false for faster evaluation focusing only on perplexity
+  max_eval_batches: null     # Maximum number of batches to evaluate during final evaluation (null = evaluate all test batches and most accurate)
