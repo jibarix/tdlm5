@@ -1,126 +1,223 @@
-# ================================================================================
-# TDLM Example Configuration - LLaDA Validated
-# Optimized for 8GB VRAM (RTX 3070 Ti class) with research-backed defaults
-# ================================================================================
+# =============================================================================
+# TDLM Quick Test Configuration - Fully Commented for New Developers
+# =============================================================================
+# This config validates all Wandb graphs and demonstrates key hyperparameters.
+# Optimized for fast experimentation on RTX 3070 Ti (8GB VRAM) or similar.
 
-# Model Architecture
+# =============================================================================
+# MODEL ARCHITECTURE - Core Transformer Settings
+# =============================================================================
 model:
-  max_seq_length: 256           # Sequence length for training/inference
-  hidden_size: 128              # Primary capacity parameter (scale: 128/256/512)
-  num_layers: 3                 # Depth (3-6 layers typical for small diffusion models)
-  num_heads: 4                  # Attention heads (keep hidden_size divisible)
-  dropout: 0.1                  # Regularization (diffusion needs less than AR)
-  training_mode: "diffusion"    # "diffusion" or "autoregressive"
+  max_seq_length: 128           # Maximum sequence length in tokens (reduced for faster training)
+                                # Production: 512-2048. Test: 128-256. Affects memory usage quadratically.
   
-  # ADDED: Missing required parameters
-  vocab_size: 50257             # GPT-2 vocabulary size
-  mask_token_id: 50256          # Token ID for [MASK] (using last token as mask)
+  hidden_size: 64               # Transformer hidden dimension (smaller model for quick testing)
+                                # Production: 512-768. Test: 64-128. Must be divisible by num_heads.
+  
+  num_layers: 2                 # Number of transformer blocks/layers (minimal for testing)
+                                # Production: 6-12. Test: 2-4. More layers = better capacity but slower training.
+  
+  num_heads: 4                  # Multi-head attention heads (hidden_size must be divisible by this)
+                                # Production: 8-16. Test: 4-8. More heads = better attention patterns.
+  
+  dropout: 0.1                  # Regularization dropout rate (prevents overfitting)
+                                # Range: 0.0-0.3. Higher = more regularization but potential underfitting.
+  
+  training_mode: "diffusion"    # Training paradigm: "diffusion" or "autoregressive"
+                                # "diffusion" = bidirectional masking (research focus)
+                                # "autoregressive" = left-to-right generation (baseline comparison)
+  
+  vocab_size: 50257             # Vocabulary size (GPT-2 tokenizer standard)
+                                # Fixed value for GPT-2 BPE tokenizer. Don't change unless using different tokenizer.
+  
+  mask_token_id: 50256          # Special [MASK] token ID for diffusion corruption
+                                # Must be vocab_size - 1 for GPT-2 tokenizer. Used in forward diffusion process.
 
-# Advanced model settings (with defaults)
+# =============================================================================
+# ADVANCED MODEL SETTINGS - Internal Architecture Parameters
+# =============================================================================
+# These are required by model.py but rarely need adjustment
 advanced:
-  attention_dropout: 0.1
-  layer_norm_eps: 1e-5
-  ignore_index: -100
+  attention_dropout: 0.1        # Dropout applied specifically to attention weights
+                                # Usually same as main dropout. Prevents attention overfitting.
+  
+  layer_norm_eps: 1e-5          # Numerical stability epsilon for RMSNorm layers
+                                # Standard value. Prevents division by zero in normalization.
+  
+  ignore_index: -100            # Token ID to ignore in loss computation (padding tokens)
+                                # PyTorch standard. Tokens with this ID don't contribute to loss.
 
-# Discrete Diffusion Process
+# =============================================================================
+# DIFFUSION PROCESS - Core Research Parameters
+# =============================================================================
 diffusion:
-  # CRITICAL: Variable masking ratios per sequence (LLaDA finding)
-  single_ratio_per_sequence: false    # NEVER set to true - fundamental error
+  single_ratio_per_sequence: false    # Use different mask ratios per sequence in batch
+                                      # false = LLaDA 2025 finding (better performance)
+                                      # true = same ratio for all sequences (simpler but worse)
   
-  # Corruption ratio bounds for uniform sampling during training
-  min_mask_ratio: 0.0                 # Allow 0% masking (clean examples)
-  max_mask_ratio: 1.0                 # Allow 100% masking (fully corrupted)
+  min_mask_ratio: 0.0                 # Minimum corruption ratio (0% = no masking)
+                                      # Range: 0.0-0.3. Lower bound for mask ratio sampling.
   
-  # Training uses uniform t~U[0,1] sampling (hardcoded in diffusion.py)
-  # Inference uses cosine schedule (configured in sampling section)
+  max_mask_ratio: 1.0                 # Maximum corruption ratio (100% = fully masked)
+                                      # Range: 0.7-1.0. Upper bound for mask ratio sampling.
   
-  confidence_threshold: 0.8           # Remasking threshold during generation
-  max_loss_weight: 5.0               # Clip extreme time-dependent weights
+  confidence_threshold: 0.8           # Threshold for confidence-based remasking during generation
+                                      # Range: 0.5-0.9. Higher = more conservative remasking.
+  
+  max_loss_weight: 5.0               # Maximum time-dependent loss weight (training stability)
+                                     # Caps extreme weights from Austin et al. 2021 formulation.
 
-# Training Configuration
+# =============================================================================
+# TRAINING CONFIGURATION - Learning and Optimization
+# =============================================================================
 training:
-  batch_size: 16                     # Small models: 8-32 | LLaDA used: 1280
-  gradient_accumulation_steps: 8      # Effective batch = 16*8 = 128
-  learning_rate: 2e-4                # Small models: 1e-4 to 5e-4 | LLaDA: 4e-4
-  min_learning_rate: 2e-5            # 10% of peak LR for cosine schedule
-  weight_decay: 0.1                  # L2 regularization (matches LLaDA exactly)
-  num_epochs: 100                    # Diffusion benefits from extended training
-  gradient_clip: 1.0                 # Prevent exploding gradients
-
-  # Based on discrete diffusion research requirements
-  eval_every_n_steps: 1000
-  save_every_n_steps: 1000
-  logging_steps: 100                    # Basic metrics (loss, accuracy)
-  detailed_metrics_steps: 500           # Tier 2 metrics (attention, token patterns)
-  generation_eval_steps: 2000           # Generation quality during training
+  # ----- Batch and Memory Management -----
+  batch_size: 8                      # Number of samples per batch (memory vs speed tradeoff)
+                                     # Production: 16-64. Test: 8-16. Higher = better gradients but more memory.
   
-  # Optimizer configuration (research-validated)
-  beta1: 0.9
-  beta2: 0.95
-  eps: 1e-8
-  warmup_ratio: 0.01
+  gradient_accumulation_steps: 4     # Accumulate gradients over N batches before optimizer step
+                                     # Effective batch size = batch_size × gradient_accumulation_steps = 32
+                                     # Allows large effective batches with limited GPU memory.
 
-# Data configuration
+  # ----- Training Duration -----
+  num_epochs: 5                      # Total number of complete dataset passes
+                                     # Production: 50-200. Test: 5-10. More epochs = better convergence.
+  
+  # ----- Checkpointing Strategy -----
+  save_every_n_steps: 50             # Save model checkpoint every N optimizer steps
+                                     # Frequent saving for quick experiments. Production: 1000-5000.
+  
+  save_every_n_epochs: 1             # Save model checkpoint every N epochs (epoch-based backup)
+                                     # Complements step-based saving. Set to 0 to disable.
+  
+  # ----- Evaluation and Logging Frequency -----
+  eval_every_n_steps: 25             # Run validation and save best model every N steps
+                                     # Aligned with logging for clean wandb graphs. Production: 500-2000.
+  
+  logging_steps: 25                  # Log core training metrics every N steps
+                                     # Aligned with eval_every_n_steps for synchronized wandb graphs.
+  
+  detailed_metrics_steps: 25         # Log research validation metrics every N steps
+                                     # Corruption performance, loss weight effectiveness. Aligned for clean graphs.
+  
+  attention_analysis_steps: 25       # Log advanced attention analysis every N steps
+                                     # Bidirectional attention health monitoring. Aligned for clean graphs.
+
+  # ----- Learning Rate Schedule -----
+  learning_rate: 2e-4                # Peak learning rate for AdamW optimizer
+                                     # Production: 1e-4 to 5e-4. Higher = faster learning but risk instability.
+  
+  min_learning_rate: 2e-5            # Minimum learning rate after cosine decay (10% of peak)
+                                     # Prevents learning rate from going to zero. Usually 5-10% of peak.
+  
+  warmup_ratio: 0.01                 # Fraction of total steps for learning rate warmup (1% of training)
+                                     # Range: 0.01-0.1. Prevents early training instability.
+  
+  warmup_start_factor: 0.001         # Start warmup at 0.1% of target LR (smoother than starting at 0)
+                                     # Range: 0.001-0.01. Gentler warmup prevents gradient spikes.
+  
+  warmup_end_factor: 1.0             # Reach 100% of target LR after warmup period
+                                     # Standard value. Don't change unless doing complex schedules.
+
+  # ----- Optimizer Configuration (AdamW) -----
+  weight_decay: 0.1                  # L2 regularization strength (prevents overfitting)
+                                     # Range: 0.01-0.3. Higher = more regularization. 0.1 is modern standard.
+  
+  gradient_clip: 1.0                 # Maximum gradient norm (prevents exploding gradients)
+                                     # Range: 0.5-2.0. Essential for stable training. 1.0 is safe default.
+  
+  beta1: 0.9                         # AdamW momentum parameter (exponential decay rate for 1st moment)
+                                     # Standard: 0.9. Controls momentum memory. Rarely needs adjustment.
+  
+  beta2: 0.95                        # AdamW momentum parameter (exponential decay rate for 2nd moment)
+                                     # LLM standard: 0.95 (vs 0.999 for other tasks). Better for language models.
+  
+  eps: 1e-8                          # AdamW numerical stability epsilon (prevents division by zero)
+                                     # Standard value. Numerical stability for optimizer computations.
+
+  # ----- System Configuration -----
+  checkpoint_map_location: "cuda"    # Load checkpoints directly to GPU (avoids CPU→GPU transfer)
+                                     # Options: "cuda", "cpu", "auto". "cuda" fastest for GPU training.
+  
+  perplexity_cap: 15.0               # Maximum loss value for perplexity calculation (prevents math.exp overflow)
+                                     # Caps at exp(15) ≈ 3.3M perplexity. Prevents numerical overflow.
+
+# =============================================================================
+# DATA PIPELINE - Dataset Processing
+# =============================================================================
 data:
-  num_workers: 4
+  num_workers: 2                    # Number of CPU processes for data loading
+                                    # Range: 2-8. More workers = faster data loading but more CPU usage.
+                                    # Should be ≤ CPU cores. 0 = single-threaded.
 
-# Sampling/Generation  
+# =============================================================================
+# SAMPLING/GENERATION - Text Generation Parameters
+# =============================================================================
 sampling:
-  num_steps: 20                      # Denoising steps (20-30 sweet spot)
-  temperature: 1.0                   # Sampling randomness (1.0 = raw probs)
-  top_k: 50                          # Top-k filtering for diversity
-  top_p: 0.9                         # Nucleus sampling threshold
-  confidence_threshold: 0.8          # For confidence-based remasking
-  max_length: null                   # Use model.max_seq_length if null
-  seed: null                         # Random if null, deterministic if set
+  num_steps: 10                      # Number of denoising steps for generation (faster sampling)
+                                     # Production: 20-64. Test: 10-20. More steps = better quality but slower.
   
-  # INFERENCE ONLY: Cosine schedule proven optimal (Zhang 2025)
-  schedule_type: "cosine"            # "cosine" (optimal) or "linear"
+  temperature: 1.0                   # Sampling temperature (creativity vs consistency)
+                                     # Range: 0.1-2.0. Higher = more creative but less coherent.
+  
+  top_k: 50                          # Top-K sampling (only consider top K tokens)
+                                     # Range: 10-100. Lower = more focused, higher = more diverse.
+  
+  top_p: 0.9                         # Nucleus sampling (consider tokens until cumulative prob = top_p)
+                                     # Range: 0.8-0.95. Alternative to top_k. 0.9 is good balance.
+  
+  confidence_threshold: 0.8          # Confidence threshold for remasking during generation
+                                     # Range: 0.5-0.9. Higher = more conservative, lower = more aggressive.
+  
+  schedule_type: "cosine"            # Corruption schedule for generation steps
+                                     # "cosine" = Zhang 2025 optimal, "linear" = simple baseline.
 
+# =============================================================================
+# MONITORING - Experiment Tracking
+# =============================================================================
 monitoring:
   wandb:
-    enabled: true
-    project: "tdlm-enhanced-metrics"
-    entity: null
-    tags: ["discrete-diffusion", "enhanced-metrics", "research-validated"]
+    enabled: true                   # Enable Weights & Biases logging
+                                    # Set to false to disable wandb (useful for offline training).
     
-    # ADDED: Custom metric groups for organized tracking
-    metric_groups:
-      # Tier 1 (Essential) - Tracked every logging_steps
-      tier1_essential:
-        - "mask_prediction_accuracy"      # MOST FUNDAMENTAL METRIC
-        - "corruption_low_accuracy"       # 0-30% masking performance
-        - "corruption_medium_accuracy"    # 30-70% masking performance  
-        - "corruption_high_accuracy"      # 70-100% masking performance
-        - "loss_weight_effectiveness"     # Austin et al. (2021) validation
-      
-      # Tier 2 (Important) - Tracked every detailed_metrics_steps
-      tier2_important:
-        - "attention_entropy"             # Bidirectional attention health
-        - "self_attention_ratio"          # Position bias detection
-        - "avg_prediction_confidence"     # Model confidence calibration
-        - "prediction_entropy"            # Uncertainty quantification
-      
-      # Tier 3 (Advanced) - Tracked less frequently
-      tier3_advanced:
-        - "schedule_optimality_validation" # Zhang (2025) empirical verification
-        - "token_frequency_bias"           # Vocabulary coverage analysis
-        - "denoising_convergence_rate"     # Generation efficiency
+    project: "tdlm-quick-test"      # Wandb project name (organizes related experiments)
+                                    # Change for different experiment series.
+    
+    tags: ["quick-test", "all-graphs-working"]  # Tags for experiment organization
+                                                # Helpful for filtering and organizing runs.
 
-# Reproducibility
+# =============================================================================
+# REPRODUCIBILITY - Deterministic Training
+# =============================================================================
 reproducibility:
-  seed: 42                           # Fixed seed for reproducible research
+  seed: 42                          # Random seed for reproducible results
+                                    # Any integer. Same seed = identical results (for debugging/comparison).
 
-# ================================================================================
-# RESEARCH VALIDATED SETTINGS:
-# - single_ratio_per_sequence: false (LLaDA critical finding)
-# - weight_decay: 0.1 (matches LLaDA exactly)  
-# - Training: uniform t sampling | Inference: cosine schedule (separate!)
-# - Extended epochs beneficial for data-constrained settings
-# ================================================================================
-
-# SCALE CONTEXT (LLaDA 8B vs This Config):
-# - Batch size: 1280 vs 16 (80x larger for web-scale)
-# - Learning rate: 4e-4 vs 2e-4 (higher for larger batches)
-# - Single pass on 2.3T tokens vs multi-epoch on smaller data
-# ================================================================================
+# =============================================================================
+# CONFIGURATION NOTES FOR NEW DEVELOPERS
+# =============================================================================
+# 
+# KEY RELATIONSHIPS:
+# - effective_batch_size = batch_size × gradient_accumulation_steps
+# - hidden_size must be divisible by num_heads
+# - max_seq_length affects memory usage quadratically
+# - All *_steps parameters should align for clean wandb graphs
+#
+# MEMORY OPTIMIZATION:
+# - Reduce batch_size and increase gradient_accumulation_steps for large models
+# - Reduce max_seq_length for memory constraints
+# - Use gradient checkpointing for very large models (not implemented here)
+#
+# PERFORMANCE TUNING:
+# - Increase batch_size for better gradient estimates
+# - Increase num_layers/hidden_size for better model capacity
+# - Increase learning_rate for faster convergence (but risk instability)
+# - Align all logging frequencies for synchronized wandb visualization
+#
+# RESEARCH VALIDATION:
+# - single_ratio_per_sequence: false (LLaDA 2025 finding)
+# - schedule_type: "cosine" (Zhang 2025 optimal)
+# - Loss weight effectiveness validates Austin et al. 2021 theory
+# - Corruption performance validates model across all masking ratios
+#
+# =============================================================================

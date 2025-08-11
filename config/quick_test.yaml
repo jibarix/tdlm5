@@ -23,25 +23,32 @@ diffusion:
   max_loss_weight: 5.0               
 
 training:
-  batch_size: 8                      # Smaller batches for faster iteration
-  gradient_accumulation_steps: 4      
-  learning_rate: 2e-4                
-  min_learning_rate: 2e-5            
-  weight_decay: 0.1                  
-  num_epochs: 5                      # Just 5 epochs for testing
-  gradient_clip: 1.0                 
+  batch_size: 8                      # Number of samples per batch (total_samples/batch_size = batches_per_epoch)
+  gradient_accumulation_steps: 4     # Accumulate gradients over 4 batches before optimizer step (effective_batch_size = 8*4 = 32)
 
-  # CRITICAL: High frequency logging to populate all charts
-  eval_every_n_steps: 200            # More frequent validation
-  save_every_n_steps: 500            
-  logging_steps: 10                  # Log every 10 steps (was 100)
-  detailed_metrics_steps: 50         # Detailed metrics every 50 steps (was 500)
-  generation_eval_steps: 1000        
-  
-  beta1: 0.9
-  beta2: 0.95
-  eps: 1e-8
-  warmup_ratio: 0.01
+  num_epochs: 5                      # Total number of training epochs 
+  save_every_n_steps: 50             # Save model every number of steps (regular checkpoint)
+  save_every_n_epochs: 1             # Save every number of epochs (epoch-based checkpoint)  
+  eval_every_n_steps: 25             # Validate and log every number of steps (saves best model if improved)
+  logging_steps: 25                  # Log training metrics every number of steps (align with eval for clean wandb graphs; use 0 or 5)
+  detailed_metrics_steps: 25         # Log research metrics every number of steps (align with eval for clean wandb graphs; use 0 or 5)
+  attention_analysis_steps: 25       # Log advanced attention metrics every number of steps (align with eval for clean wandb graphs; use 0 or 5)
+
+  learning_rate: 2e-4                # Peak learning rate for AdamW optimizer
+  min_learning_rate: 2e-5            # Minimum learning rate after cosine decay (10% of peak)
+  weight_decay: 0.1                  # L2 regularization strength (prevents overfitting)
+  gradient_clip: 1.0                 # Maximum gradient norm (prevents exploding gradients)
+  beta1: 0.9                         # AdamW momentum parameter (exponential decay rate for 1st moment)
+  beta2: 0.95                        # AdamW momentum parameter (exponential decay rate for 2nd moment) 
+  eps: 1e-8                          # AdamW numerical stability epsilon (prevents division by zero)
+  warmup_ratio: 0.01                 # Fraction of total steps for learning rate warmup (1% of training)
+
+  warmup_start_factor: 0.001         # Start at 0.1% of target LR during warmup (instead of 0.0001%)  
+  warmup_end_factor: 1.0             # Reach 100% of target LR after warmup period
+
+  checkpoint_map_location: "cuda"    # Load checkpoints directly to GPU (avoids CPU→GPU transfer)
+
+  perplexity_cap: 15.0               # Maximum loss value for perplexity calculation (prevents math.exp overflow)
 
 data:
   num_workers: 2
