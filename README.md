@@ -32,9 +32,76 @@ python main.py --config config/example_config.yaml
 # Resume from checkpoint
 python main.py --config config/example_config.yaml --resume experiments/exp_id/checkpoints/best_model.pt
 
-# Evaluation only
+# Custom experiment directory and ID
+python main.py --config config/example_config.yaml --experiment-id my_experiment --output-dir my_results
+
+# Evaluation only (requires trained model)
 python main.py --config config/example_config.yaml --resume path/to/checkpoint.pt --eval-only
 ```
+
+#### Important Configuration Flags
+
+**Checkpoint Management:**
+```yaml
+training:
+  cleanup_checkpoints: true          # true = delete all checkpoints except best and latest
+  checkpoint_map_location: "cuda"    # Load checkpoints directly to GPU (faster)
+  save_every_n_steps: 1000          # Save checkpoint frequency
+  save_every_n_epochs: 5            # Epoch-based saving (0 = disable)
+```
+
+**Weights & Biases Logging:**
+```yaml
+monitoring:
+  wandb:
+    enabled: true                    # Enable/disable W&B tracking
+    project: "tdlm-research"         # W&B project name
+    tags: ["experiment", "diffusion"] # Tags for organization
+```
+
+**Enhanced Evaluation:**
+```yaml
+enhanced_evaluation:
+  include_downstream: true           # Include HellaSwag/MMLU tasks (slower but more comprehensive)
+  max_eval_batches: null            # Limit evaluation batches (null = all batches, most accurate)
+```
+
+### Model Comparison
+```bash
+# Compare trained diffusion vs autoregressive models
+python compare_models.py --dd tdlm_20250811_123506 --ar tdlm_20250811_140810
+
+# Compare with custom settings and save results
+python compare_models.py --dd diffusion_exp --ar ar_exp --max-batches 100 --save-results
+
+# Save results to custom location
+python compare_models.py --dd exp1 --ar exp2 --save-results --output-dir my_comparisons --output-name my_comparison
+
+# Use custom experiments directory
+python compare_models.py --dd exp1 --ar exp2 --experiments-dir /path/to/experiments
+```
+
+### Gradient Flow Analysis
+```bash
+# Generate gradient heatmaps from trained diffusion models (requires wandb data)
+python gradient_heatmap_generator.py run-20250811_123519-fh5nsj6z
+
+# Override wandb entity/project if needed
+python gradient_heatmap_generator.py run-20250811_123519-fh5nsj6z --entity my_entity --project my_project
+
+# Use custom wandb directory
+python gradient_heatmap_generator.py run-20250811_123519-fh5nsj6z --wandb-path /path/to/wandb
+```
+
+**Requirements**: `pip install wandb seaborn matplotlib`
+
+**Generates 4 heatmaps**:
+1. Corruption Level vs Time - gradient norms across corruption levels over training
+2. Gradient Ratios Over Time - balance ratios evolution during training  
+3. Gradient Health Matrix - stability and balance indicators
+4. Gradient Summary Dashboard - comprehensive overview
+
+**Note**: Only works with diffusion training runs that have logged gradient metrics. Saves to `research/heatmaps/run-id/`.
 
 ### Generation
 ```python
@@ -163,7 +230,22 @@ training:
   # Metrics configuration
   logging_steps: 100                    # Tier 1 metrics
   detailed_metrics_steps: 500           # Tier 2 metrics  
-  generation_eval_steps: 2000           # Generation quality
+  attention_analysis_steps: 2000        # Advanced metrics
+  # Checkpoint management
+  cleanup_checkpoints: false           # Keep all checkpoints vs. only best/latest
+  save_every_n_steps: 1000            # Checkpoint save frequency
+  checkpoint_map_location: "cpu"       # "cuda" for faster loading, "cpu" for compatibility
+
+# Enhanced evaluation settings
+enhanced_evaluation:
+  include_downstream: true             # Include HellaSwag/MMLU evaluation
+  max_eval_batches: null              # Evaluation batch limit (null = all)
+
+# Monitoring configuration  
+monitoring:
+  wandb:
+    enabled: false                     # Enable Weights & Biases logging
+    project: "tdlm-research"           # W&B project name
 ```
 
 ## Testing and Validation
@@ -180,15 +262,32 @@ For comprehensive testing of all components, see the **[Comprehensive Test Guide
 # Run quick validation of training system
 python main.py --config config/quick_test.yaml
 
+# Test autoregressive mode
+python main.py --config config/quick_test_ar.yaml
+
 # Test metrics computation
 python -c "from src.training import DiffusionTrainer; print('Metrics system ready')"
+
+# Validate cosine schedule implementation
+python cosine_schedule_validator.py --test config/example_config.yaml
+
+# List available experiments for comparison
+python cosine_schedule_validator.py --list
+
+# Generate gradient analysis (requires completed wandb run)
+# python gradient_heatmap_generator.py run-YYYYMMDD_HHMMSS-wandb_id
 ```
+
+**Note**: Quick test configs use `cleanup_checkpoints: true` and W&B logging enabled. Adjust these settings in your config as needed for production runs.
 
 ## File Structure
 
 ```
 tdlm/
 ├── main.py                    # Training entry point
+├── compare_models.py          # Model comparison script
+├── cosine_schedule_validator.py # Schedule validation script
+├── gradient_heatmap_generator.py # Gradient flow analysis tool
 ├── src/
 │   ├── utils.py              # Configuration and utilities
 │   ├── model.py              # Transformer architecture

@@ -7,5 +7,6 @@ experiments/
 wandb/
 gpu_test/
 old_versions_backup/
+research/
 test_exp/
 test_pipeline/
