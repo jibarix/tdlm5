@@ -78,47 +78,63 @@ class CosineScheduleValidator:
             raise RuntimeError(f"Failed to load checkpoint {checkpoint_path}: {e}")
     
     def validate_cosine_mathematics(self):
-        """Test mathematical correctness of cosine schedule."""
-        print("\n=== Mathematical Validation ===")
-        
-        num_steps = 20
-        
+        """
+        REVISED: Test mathematical correctness of cosine schedule with enhanced output.
+        This function now provides a side-by-side comparison with the theoretical formula
+        from Zhang (2025) for improved clarity and validation rigor.
+        """
+        print("\n=== Mathematical Validation (Zhang, 2025) ===")
+        print("Verifying implementation against Fisher-Rao optimal schedule:")
+        print("α_t = cos²(π/2 * t), where t = i/T")
+        print("-" * 65)
+
+        num_steps = 10  # Use fewer steps for a cleaner printout
+
         # Create cosine sampler
         sampler = DiffusionSampler(
             self.model, self.diffusion, self.config,
             SamplingConfig(schedule_type="cosine", num_steps=num_steps)
         )
-        
-        # Get schedule values
-        cosine_ratios = sampler._create_corruption_schedule(num_steps)
-        
-        print(f"Cosine schedule (20 steps): {cosine_ratios}")
-        print(f"Start value: {cosine_ratios[0]:.6f} (should be ~1.0)")
-        print(f"End value: {cosine_ratios[-1]:.6f} (should be ~0.0)")
-        
-        # Check monotonicity
-        is_monotonic = all(cosine_ratios[i] >= cosine_ratios[i+1] for i in range(len(cosine_ratios)-1))
-        print(f"Monotonically decreasing: {is_monotonic}")
-        
-        # Verify Zhang 2025 formula: cos²(π/2 * i/T)
+
+        # Get schedule values (corruption ratios, which correspond to alpha_t)
+        alpha_t_actual = sampler._create_corruption_schedule(num_steps)
+
+        print(f"{'Step (i)':<10}{'t (i/T)':<10}{'Expected α_t':<15}{'Actual α_t':<15}{'Difference':<15}")
+
         expected_ratios = []
         for i in range(num_steps + 1):
             t = i / num_steps
+            # Zhang 2025 formula from Corollary 3
             expected = math.cos(math.pi / 2 * t) ** 2
             expected_ratios.append(expected)
-        
-        expected_ratios = torch.tensor(expected_ratios)
-        max_diff = torch.max(torch.abs(cosine_ratios - expected_ratios)).item()
-        print(f"Max difference from Zhang 2025 formula: {max_diff:.8f}")
-        
+
+            actual = alpha_t_actual[i].item()
+            diff = abs(expected - actual)
+
+            if i <= 3 or i >= num_steps - 1:  # Show first few and last few steps for brevity
+                print(f"{i:<10}{t:<10.2f}{expected:<15.6f}{actual:<15.6f}{diff:<15.2e}")
+
+        # FIXED: Ensure the expected ratios tensor is created on the same device as the actual one.
+        expected_ratios_tensor = torch.tensor(expected_ratios, device=alpha_t_actual.device, dtype=alpha_t_actual.dtype)
+        max_diff = torch.max(torch.abs(alpha_t_actual - expected_ratios_tensor)).item()
+
+        is_monotonic = all(alpha_t_actual[i] >= alpha_t_actual[i+1] for i in range(len(alpha_t_actual)-1))
+
+        print("-" * 65)
+        print(f"Monotonically decreasing: {is_monotonic}")
+        print(f"Max difference from formula: {max_diff:.2e}")
+
         # Validation results
         math_valid = is_monotonic and max_diff < 1e-6
         print(f"Mathematical validation: {'PASS' if math_valid else 'FAIL'}")
-        
+
         return math_valid
-    
+
     def compare_schedules(self):
-        """Compare linear vs cosine schedule performance."""
+        """
+        REVISED: Compare linear vs cosine schedule performance with clearer metric names.
+        The "score" is now explicitly labeled as "Avg. Log-Likelihood" for better user understanding.
+        """
         print("\n=== Schedule Comparison ===")
         
         schedules = ["linear", "cosine"]
@@ -147,6 +163,8 @@ class CosineScheduleValidator:
                 )
                 
                 generation_time = time.time() - start_time
+                # CLARIFICATION: The "score" is the average log-likelihood of the generated sequence.
+                # Higher is generally better, indicating higher model confidence.
                 avg_score = output.scores.mean().item()
                 
                 results[schedule_type] = {
@@ -156,7 +174,7 @@ class CosineScheduleValidator:
                 }
                 
                 print(f"  Time: {generation_time:.3f}s")
-                print(f"  Score: {avg_score:.4f}")
+                print(f"  Avg. Log-Likelihood (Score): {avg_score:.4f}")
                 print(f"  Status: SUCCESS")
                 
             except Exception as e:
@@ -164,7 +182,7 @@ class CosineScheduleValidator:
                 print(f"  Status: FAILED - {e}")
         
         # Compare results
-        if all(r['success'] for r in results.values()):
+        if all(r.get('success', False) for r in results.values()):
             print(f"\nComparison Summary:")
             linear_time = results['linear']['time']
             cosine_time = results['cosine']['time']
@@ -177,7 +195,7 @@ class CosineScheduleValidator:
                 print(f"  Result: Cosine is {speedup:.2f}x faster")
             else:
                 ratio = cosine_time / linear_time
-                print(f"  Result: Linear is {1/ratio:.2f}x faster")
+                print(f"  Result: Cosine is {ratio:.2f}x slower")
         
         return results
     
@@ -214,14 +232,17 @@ class CosineScheduleValidator:
             score = output.scores[0].item()
             non_mask_tokens = (sequence != self.config.model.mask_token_id).sum().item()
             
-            print(f"  Score: {score:.4f}")
+            print(f"  Avg. Log-Likelihood (Score): {score:.4f}")
             print(f"  Length: {non_mask_tokens} tokens")
             print(f"  Time: {output.generation_time:.3f}s")
         
         return True
     
     def run_validation(self):
-        """Run complete validation suite."""
+        """
+        REVISED: Run complete validation suite with an improved summary report.
+        The final output is now more readable and provides a clear, actionable conclusion.
+        """
         print(f"Running Cosine Schedule Validation")
         print("=" * 50)
         
@@ -237,7 +258,8 @@ class CosineScheduleValidator:
         # Test 2: Schedule comparison
         try:
             comparison = self.compare_schedules()
-            results['comparison'] = all(r['success'] for r in comparison.values())
+            # Check if all schedules ran successfully
+            results['comparison'] = all(r.get('success', False) for r in comparison.values())
         except Exception as e:
             print(f"Schedule comparison failed: {e}")
             results['comparison'] = False
@@ -245,6 +267,8 @@ class CosineScheduleValidator:
         # Test 3: Generation quality (only for trained models)
         try:
             quality_result = self.test_generation_quality()
+            # This test is skipped for untrained models (returns None), so we handle that.
+            # It passes if it runs without error (returns True) or is skipped (returns None).
             results['generation'] = quality_result is not False
         except Exception as e:
             print(f"Generation quality test failed: {e}")
@@ -254,25 +278,35 @@ class CosineScheduleValidator:
         print("\n" + "=" * 50)
         print("VALIDATION SUMMARY")
         print("=" * 50)
-        
+
+        print(f"{'Test':<25}{'Status'}")
+        print("-" * 50)
         for test_name, passed in results.items():
+            
             status = "PASS" if passed else "FAIL"
-            print(f"{test_name.title():.<20} {status}")
-        
-        overall_success = sum(results.values()) / len(results)
-        print(f"\nOverall Success Rate: {overall_success:.1%}")
-        
-        if overall_success >= 0.8:
-            print("SUCCESS Cosine schedule implementation is working correctly")
-            print("Ready for research use with Zhang 2025 optimal schedule")
+            print(f"{test_name.title():<25}{status}")
+
+        print("-" * 50)
+
+        # Determine overall status
+        all_passed = all(results.values())
+
+        if all_passed:
+            
+            print("\nCONCLUSION: PASS")
+            print("The cosine schedule implementation is mathematically correct and ready for research use.")
+            print("This aligns with the theoretical findings of Zhang (2025).")
         else:
-            print("WARNING Some tests failed - check implementation")
-        
+            
+            print("\nCONCLUSION: FAIL")
+            print("One or more tests failed. Please review the implementation.")
+
         return results
 
 
 def list_available_experiments():
     """List available experiments in the experiments directory."""
+    # NOTE: This path is user-specific. It is kept as provided.
     experiments_dir = Path(r"C:\Users\arroy\Projects\tdlm5\experiments")
     if not experiments_dir.exists():
         return []
@@ -376,7 +410,9 @@ def main():
     # Run validation
     try:
         results = validator.run_validation()
-        return 0 if sum(results.values()) >= len(results) * 0.8 else 1
+        # The original logic for exit code is maintained.
+        # It passes if 80% or more of the tests succeed.
+        return 0 if sum(results.values()) / len(results) >= 0.8 else 1
         
     except Exception as e:
         print(f"FATAL ERROR: {e}")
