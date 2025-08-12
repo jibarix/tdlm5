@@ -143,11 +143,12 @@ output = sampler.generate(
 - **Attention Monitoring**: Bidirectional attention pattern health analysis
 - **Multi-Tier Tracking**: Essential, important, and advanced metrics organized for research
 
-### Modern Architecture
-- **7M parameter Transformer** optimized for RTX 3070 Ti (8GB VRAM)
-- **RoPE + SwiGLU + RMSNorm**: State-of-the-art architectural components
+### Configurable Architecture
+- **Modern Components**: RoPE + SwiGLU + RMSNorm for state-of-the-art performance
 - **Bidirectional Attention**: Full context modeling for diffusion training
 - **Unified Codebase**: Supports both diffusion and autoregressive modes
+- **Memory Efficient**: Designed for consumer GPU constraints
+- **Flexible Scale**: Configurable model sizes via YAML configuration
 
 ### Production Ready
 - **Simple Interface**: `python main.py --config file.yaml`
